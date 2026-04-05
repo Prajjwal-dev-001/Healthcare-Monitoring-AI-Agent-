@@ -5,10 +5,10 @@ from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
 import database as db
 
-# 🔥 Ye line automatically tumhari .env file se key utha legi
+
 load_dotenv()
 
-# Baki ka pura code bilkul waisa hi rahega jaisa pehle tha...
+
 
 # Tool 1: Medications
 @tool
