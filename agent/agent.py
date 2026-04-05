@@ -1,98 +1,72 @@
 import os
-import re
-from datetime import datetime
 from dotenv import load_dotenv
-from google import genai
-from db.database import add_medicine, add_reminder
+from langchain_groq import ChatGroq
+from langchain_core.tools import tool
+from langgraph.prebuilt import create_react_agent
+import database as db
 
+# 🔥 Ye line automatically tumhari .env file se key utha legi
 load_dotenv()
 
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+# Baki ka pura code bilkul waisa hi rahega jaisa pehle tha...
 
-MODEL_CANDIDATES = [
-    "gemini-3-flash-preview",
-    "gemini-2.5-flash",
-    "gemini-2.5-pro",
-]
+# Tool 1: Medications
+@tool
+def add_medication_tool(name: str, time: str):
+    """
+    Use this tool to add a new medication to the patient's schedule. 
+    Requires the medication name and the time to take it.
+    """
+    db.add_medicine(name, time)
+    return f"Successfully added {name} at {time} to the database."
 
-def _call_gemini(prompt: str) -> str:
-    last_error = None
-    for model_name in MODEL_CANDIDATES:
-        try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-            )
-            return (response.text or "").strip()
-        except Exception as e:
-            last_error = e
-    raise last_error
+# Tool 2: Fitness (NEW)
+@tool
+def log_fitness_tool(activity: str, duration: str):
+    """
+    Use this tool to log a physical activity, workout, or exercise.
+    Requires the activity name (e.g., Running, Yoga) and duration (e.g., 30 mins).
+    """
+    db.add_fitness_log(activity, duration)
+    return f"Successfully logged {duration} of {activity}."
+@tool
+def log_symptom_tool(symptom_description: str):
+    """Use this tool when the user mentions a health issue, pain, or symptom."""
+    db.add_symptom(symptom_description)
+    return f"I've noted down your symptom: {symptom_description}. Please monitor it."
 
-def process_input(user_input: str) -> str:
-    text = user_input.lower().strip()
+# Tool list update karo
+tools = [add_medication_tool, log_fitness_tool, log_symptom_tool]
 
-    # Fast path for simple inputs like: take dolo at 9 pm
-    pattern = r"^(take|add)?\s*(\w+)\s*at\s*(.+)$"
-    match = re.search(pattern, text)
+# Groq Llama 3 Model Setup
+llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
 
-    if match and "," not in text and len(text.split()) <= 5:
-        med_name = match.group(2)
-        med_time = match.group(3).strip()
+# We added the new tool to the list!
+tools = [add_medication_tool, log_fitness_tool]
 
-        add_medicine(med_name, med_time)
+agent_executor = create_react_agent(llm, tools)
 
-        try:
-            now = datetime.now()
-            reminder_dt = datetime.strptime(med_time, "%I %p")
-            reminder_dt = reminder_dt.replace(
-                year=now.year,
-                month=now.month,
-                day=now.day
-            )
-            add_reminder(med_name, reminder_dt.isoformat())
-        except Exception:
-            pass
-
-        return f"✅ Added {med_name} at {med_time} + reminder set"
-
-    # AI path for complex inputs
+def chat_with_agent(user_input):
     try:
-        prompt = f"""
-Extract medicine name and time from this sentence:
-"{user_input}"
-
-Respond ONLY in this format:
-medicine: <name>
-time: <time>
-advice: <short line>
-"""
-
-        output = _call_gemini(prompt).lower()
-
-        med_name = output.split("medicine:")[1].split("\n")[0].strip()
-        med_time = output.split("time:")[1].split("\n")[0].strip()
-
-        advice = ""
-        if "advice:" in output:
-            advice = output.split("advice:")[1].strip()
-
-        add_medicine(med_name, med_time)
-
-        try:
-            now = datetime.now()
-            reminder_dt = datetime.strptime(med_time, "%I %p")
-            reminder_dt = reminder_dt.replace(
-                year=now.year,
-                month=now.month,
-                day=now.day
-            )
-            add_reminder(med_name, reminder_dt.isoformat())
-        except Exception:
-            pass
-
-        if advice:
-            return f"✅ Added {med_name} at {med_time} + reminder set\n💡 {advice}"
-        return f"✅ Added {med_name} at {med_time} + reminder set"
-
+        # Updated the prompt so the AI knows it can track fitness now
+        # UPGRADED SYSTEM PROMPT (Domain Specialization)
+       # 🔥 UPGRADED STRICT SYSTEM PROMPT (Domain Guardrail)
+        system_prompt = """You are a highly empathetic, professional Indian Healthcare AI Assistant. 
+        Your job is to help patients track their medications, fitness logs, and symptoms. 
+        
+        🚨 STRICT RULE: You are restricted to answering ONLY questions related to healthcare, medicine, fitness, hygiene, and wellness. 
+        If the user asks about politics, general knowledge, movies, coding, math, or ANY non-health topic, you MUST strictly refuse to answer.
+        Instead, reply politely with exactly this: "I am a specialized Health & Wellness Assistant. I can only help you with medical, fitness, and health-related queries."
+        
+        When users ask for general wellness advice, provide culturally relevant Indian suggestions (like Yoga, Dal, Paneer). 
+        Always be medically safe and advise consulting a real doctor for serious issues. 
+        Strictly use your tools to save data to the database when requested."""
+        response = agent_executor.invoke({
+            "messages": [
+                ("system", system_prompt),
+                ("user", user_input)
+            ]
+        })
+        return response["messages"][-1].content
     except Exception as e:
-        return f"❌ Error: {str(e)}"
+        return f"Error connecting to AI: {str(e)}"
