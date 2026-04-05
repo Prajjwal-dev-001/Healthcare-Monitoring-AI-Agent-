@@ -1,80 +1,94 @@
 import sqlite3
 from datetime import datetime
 
-conn = sqlite3.connect("health.db", check_same_thread=False)
-cursor = conn.cursor()
+def get_connection():
+    return sqlite3.connect("health.db", check_same_thread=False)
 
-# Medications table
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS medications (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    time TEXT NOT NULL
-)
-""")
+def init_db():
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Medications table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS medications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        time TEXT NOT NULL
+    )
+    """)
+    
+    # Fitness Logs table (NEW)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS fitness_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        activity TEXT NOT NULL,
+        duration TEXT NOT NULL,
+        date_logged TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    
+    conn.commit()
+    conn.close()
 
-# Reminders table
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS reminders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    medicine_name TEXT NOT NULL,
-    reminder_at TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending'
-)
-""")
-
-conn.commit()
-
+# --- Medication Functions ---
 def add_medicine(name, time):
-    cursor.execute(
-        "INSERT INTO medications (name, time) VALUES (?, ?)",
-        (name, time)
-    )
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO medications (name, time) VALUES (?, ?)", (name, time))
     conn.commit()
+    conn.close()
 
-def get_medicines():
-    cursor.execute("SELECT * FROM medications ORDER BY id DESC")
-    return cursor.fetchall()
+def get_all_medicines():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM medications")
+    meds = cursor.fetchall()
+    conn.close()
+    return meds
 
-def add_reminder(medicine_name, reminder_at):
-    cursor.execute(
-        "INSERT INTO reminders (medicine_name, reminder_at, status) VALUES (?, ?, 'pending')",
-        (medicine_name, reminder_at)
-    )
+# --- Fitness Functions (NEW) ---
+def add_fitness_log(activity, duration):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO fitness_logs (activity, duration) VALUES (?, ?)", (activity, duration))
     conn.commit()
+    conn.close()
 
-def get_reminders():
-    cursor.execute("SELECT * FROM reminders ORDER BY id DESC")
-    return cursor.fetchall()
+def get_recent_fitness_logs():
+    conn = get_connection()
+    cursor = conn.cursor()
+    # Grabs the 5 most recent workouts and formats the date
+    cursor.execute("SELECT activity, duration, date(date_logged) FROM fitness_logs ORDER BY id DESC LIMIT 5")
+    logs = cursor.fetchall()
+    conn.close()
+    return logs
 
-def mark_reminder_taken(reminder_id):
-    cursor.execute(
-        "UPDATE reminders SET status='taken' WHERE id=?",
-        (reminder_id,)
-    )
+def get_fitness_data_for_chart():
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+
+    cursor.execute("SELECT date(date_logged), COUNT(id) FROM fitness_logs GROUP BY date(date_logged)")
+    data = cursor.fetchall()
+    conn.close()
+    return data
+
+# Symptoms Table
+def init_symptoms():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("CREATE TABLE IF NOT EXISTS symptoms (id INTEGER PRIMARY KEY, note TEXT, date TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
     conn.commit()
+    conn.close()
 
-def delete_reminder(reminder_id):
-    cursor.execute(
-        "DELETE FROM reminders WHERE id=?",
-        (reminder_id,)
-    )
+def add_symptom(note):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO symptoms (note) VALUES (?)", (note,))
     conn.commit()
+    conn.close()
 
-def get_due_reminders():
-    cursor.execute("SELECT * FROM reminders WHERE status='pending'")
-    rows = cursor.fetchall()
 
-    now = datetime.now()
-    due = []
+init_db()
 
-    for row in rows:
-        # row = (id, medicine_name, reminder_at, status)
-        try:
-            reminder_dt = datetime.fromisoformat(row[2])
-            if reminder_dt <= now:
-                due.append(row)
-        except ValueError:
-            pass
-
-    return due
+init_symptoms()
