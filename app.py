@@ -1,126 +1,87 @@
 import streamlit as st
-from datetime import datetime
+import pandas as pd
+import database as db
+import agent
 
-from db.database import (
-    add_medicine,
-    get_medicines,
-    add_reminder,
-    get_reminders,
-    mark_reminder_taken,
-    delete_reminder,
-    get_due_reminders
-)
+# Page Setup
+st.set_page_config(page_title="AI Health Assistant", page_icon="🩺", layout="wide")
+st.title("🩺 Personal Healthcare Monitor")
+st.markdown("Welcome to your AI-powered health tracking platform. (Track A)")
 
-from agent.agent import process_input
+# Sidebar (Same as before)
+with st.sidebar:
+    st.header("📊 Health Dashboard")
+    st.info("Agent Status: Online 🟢 (Powered by Groq)")
+    
+    st.subheader("Your Current Medications")
+    meds = db.get_all_medicines()
+    if meds:
+        for med in meds:
+            st.success(f"💊 **{med[1]}** (Time: {med[2]})")
+    else:
+        st.info("No medications tracked yet.")
+        
+    st.divider()
+    
+    st.subheader("🏃‍♂️ Recent Fitness Logs")
+    fitness_logs = db.get_recent_fitness_logs()
+    if fitness_logs:
+        for log in fitness_logs:
+            st.warning(f"**{log[0]}** for {log[1]} (Logged: {log[2]})")
+    else:
+        st.info("No fitness activities logged yet.")
 
-st.title("Healthcare AI Agent 🏥")
+# 🔥 NEW: UI Tabs for Professional Look
+tab1, tab2 = st.tabs(["💬 Chat Assistant", "📈 Health Analytics"])
 
-# -------------------------
-# Add Medicine
-# -------------------------
-st.header("Add Medication 💊")
+# --- TAB 1: Chat Assistant ---
+with tab1:
+    st.subheader("Chat with your Health Assistant")
 
-med_name = st.text_input("Medicine Name")
-med_time = st.text_input("Time (e.g., 8 PM)")
+    if "messages" not in st.session_state:
+        st.session_state.messages = [{"role": "assistant", "content": "Hello! I am your Health Assistant. Tell me which medicine to add, or log your recent workout!"}]
 
-if st.button("Add Medicine"):
-    if med_name and med_time:
-        add_medicine(med_name, med_time)
-        st.success("Medicine added successfully!")
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    if prompt := st.chat_input("E.g., I ran for 45 minutes this morning"):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                response = agent.chat_with_agent(prompt)
+                st.markdown(response)
+                st.session_state.messages.append({"role": "assistant", "content": response})
+                
         st.rerun()
+
+# --- TAB 2: Analytics & Graphs ---
+# --- TAB 2: Analytics & Graphs ---
+with tab2:
+    st.subheader("Workout Frequency Tracker")
+    chart_data = db.get_fitness_data_for_chart()
+    
+    if chart_data:
+        # SQLite data ko Pandas me convert kar rahe hain graph ke liye
+        df = pd.DataFrame(chart_data, columns=["Date", "Workouts"])
+        df.set_index("Date", inplace=True)
+        
+        # Streamlit  inbuilt Bar Chart
+        st.bar_chart(df)
+        st.info("💡 This chart shows how many times you worked out each day.")
+        
+        # 🔥 NEW: Export to CSV Feature
+        st.divider()
+        st.subheader("📥 Export Your Data")
+        csv_data = df.to_csv().encode('utf-8')
+        st.download_button(
+            label="Download Fitness Data (CSV)",
+            data=csv_data,
+            file_name="my_fitness_report.csv",
+            mime="text/csv",
+        )
     else:
-        st.warning("Please fill all fields")
-
-# -------------------------
-# Show Medicines
-# -------------------------
-st.header("Your Medications 📋")
-
-meds = get_medicines()
-
-if meds:
-    for med in meds:
-        st.write(f"{med[1]} at {med[2]}")
-else:
-    st.info("No medicines added yet.")
-
-# -------------------------
-# Reminder System
-# -------------------------
-st.divider()
-st.header("Medication Reminder 🔔")
-
-rem_name = st.text_input("Medicine Name for Reminder", key="rem_name")
-
-col1, col2 = st.columns(2)
-with col1:
-    rem_date = st.date_input("Reminder Date", value=datetime.now().date(), key="rem_date")
-with col2:
-    rem_time = st.time_input(
-        "Reminder Time",
-        value=datetime.now().time().replace(second=0, microsecond=0),
-        key="rem_time"
-    )
-
-if st.button("Save Reminder"):
-    if rem_name.strip():
-        reminder_dt = datetime.combine(rem_date, rem_time)
-        add_reminder(rem_name.strip(), reminder_dt.isoformat())
-        st.success("Reminder saved successfully!")
-        st.rerun()
-    else:
-        st.warning("Please enter medicine name")
-
-due_reminders = get_due_reminders()
-
-st.subheader("Due Reminders ⏰")
-if due_reminders:
-    for r in due_reminders:
-        rid, med_name, reminder_at, status = r
-        dt = datetime.fromisoformat(reminder_at)
-        st.warning(f"⏰ {med_name} — {dt.strftime('%d %b %Y, %I:%M %p')}")
-else:
-    st.success("No due reminders right now.")
-
-st.subheader("All Reminders 📅")
-reminders = get_reminders()
-
-if reminders:
-    for r in reminders:
-        rid, med_name, reminder_at, status = r
-        dt = datetime.fromisoformat(reminder_at)
-
-        st.write(f"**{med_name}** — {dt.strftime('%d %b %Y, %I:%M %p')} — {status}")
-
-        c1, c2 = st.columns(2)
-        with c1:
-            if status != "taken":
-                if st.button("Mark as taken", key=f"taken_{rid}"):
-                    mark_reminder_taken(rid)
-                    st.success("Marked as taken.")
-                    st.rerun()
-        with c2:
-            if st.button("Delete", key=f"delete_{rid}"):
-                delete_reminder(rid)
-                st.success("Deleted.")
-                st.rerun()
-else:
-    st.info("No reminders saved yet.")
-
-# -------------------------
-# AI Assistant
-# -------------------------
-st.divider()
-st.header("AI Assistant 🤖")
-
-user_query = st.text_input("Type like: Take Paracetamol at 8 PM")
-
-if st.button("Ask AI"):
-    if user_query:
-        with st.spinner("AI is thinking... 🤖"):
-            response = process_input(user_query)
-
-        st.success(response)
-        st.rerun()  
-    else:
-        st.warning("Please enter something!")
+        st.info("Not enough data to show analytics yet. Go to the Chat tab and log a workout!")
