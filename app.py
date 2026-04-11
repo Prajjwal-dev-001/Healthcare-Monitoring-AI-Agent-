@@ -13,21 +13,38 @@ import json
 # --- 1. PAGE CONFIG ---
 st.set_page_config(page_title="Personal Healthcare Monitor", layout="wide", page_icon="🩺")
 
+# --- THE INVISIBLE SHIELD (UNIVERSAL CLEANER) ---
+# Ye function AI ke har message ko filter karega display hone se pehle
+def clean_ai_response(text):
+    if not text:
+        return text
+    # 1. Remove manual LOG tags
+    cleaned = re.sub(r'\[LOG_.*?\]', '', text)
+    # 2. Remove complete function blocks: <function=...>...</function>
+    cleaned = re.sub(r'<function=.*?>.*?</function>', '', cleaned, flags=re.DOTALL)
+    # 3. Remove unclosed opening tags: <function=...>
+    cleaned = re.sub(r'<function=.*?>', '', cleaned)
+    # 4. Catch-all for any cut-off function tags at the end of the string
+    cleaned = re.sub(r'<function=.*', '', cleaned, flags=re.DOTALL)
+    # 5. Remove simple </function> or <function>
+    cleaned = re.sub(r'</?function>', '', cleaned)
+    
+    return cleaned.strip()
+
 # --- INITIALIZE REAL-TIME DATABASE (Session State + SQLite Connection) ---
 if "live_meds" not in st.session_state:
-    # 1. Fetching from SQLite Database!
+    # Fetching from SQLite Database
     saved_meds = db.get_all_medicines()
     st.session_state.live_meds = [{"med": m[1], "time": m[2]} for m in saved_meds] if saved_meds else []
 
 if "live_fitness" not in st.session_state:
-    # 1. Fetching from SQLite Database!
+    # Fetching from SQLite Database
     saved_fitness = db.get_recent_fitness_logs()
     
-    # 💥 THE FIX: Extract only numbers from the string (ignoring words like 'minutes')
+    # Extract only numbers from the string
     clean_fitness = []
     if saved_fitness:
         for f in saved_fitness:
-            # re.sub non-digits ko hata dega. Agar "40 mins" hai toh "40" ban jayega.
             only_numbers = re.sub(r'\D', '', str(f[1])) 
             clean_dur = int(only_numbers) if only_numbers else 0
             clean_fitness.append({"activity": f[0], "duration": clean_dur})
@@ -173,14 +190,15 @@ if app_mode == "🩺 Clinical Mode":
             
             with st.chat_message("assistant"):
                 with st.spinner("Thinking..."):
-                    response = agent.chat_with_agent(prompt, persona_name="🩺 Medical")
+                    # Get Raw Response from AI
+                    raw_response = agent.chat_with_agent(prompt, persona_name="🩺 Medical")
                     
-                    # --- 1. THE ADVANCED PARSER ---
+                    # --- 1. THE ADVANCED PARSER (Extracting Data before cleaning) ---
                     logged_something = False
 
                     # A. Fitness Parsing
-                    fit_match = re.search(r'\[LOG_FITNESS:\s*(.*?),\s*(\d+)\]', response)
-                    fit_tool_match = re.search(r'<function=log_fitness_tool>(.*?)</function>', response, re.DOTALL)
+                    fit_match = re.search(r'\[LOG_FITNESS:\s*(.*?),\s*(\d+)\]', raw_response)
+                    fit_tool_match = re.search(r'<function=log_fitness_tool>(.*?)</function>', raw_response, re.DOTALL)
                     
                     if fit_match:
                         act_name = fit_match.group(1).strip()
@@ -200,8 +218,8 @@ if app_mode == "🩺 Clinical Mode":
                         except: pass
 
                     # B. Medicine Parsing
-                    med_match = re.search(r'\[LOG_MED:\s*(.*?),\s*(.*?)\]', response)
-                    med_tool_match = re.search(r'<function=add_medication_tool>(.*?)</function>', response, re.DOTALL)
+                    med_match = re.search(r'\[LOG_MED:\s*(.*?),\s*(.*?)\]', raw_response)
+                    med_tool_match = re.search(r'<function=add_medication_tool>(.*?)</function>', raw_response, re.DOTALL)
                     
                     if med_match:
                         med_name, med_time = med_match.group(1).strip(), med_match.group(2).strip()
@@ -219,11 +237,8 @@ if app_mode == "🩺 Clinical Mode":
                             logged_something = True
                         except: pass
 
-                    # --- 2. THE CLEANER (Hiding Junk Tags) ---
-                    clean_response = re.sub(r'\[LOG_.*?\]', '', response)
-                    clean_response = re.sub(r'<function.*?>.*?</function>', '', clean_response, flags=re.DOTALL)
-                    clean_response = re.sub(r'</?function>', '', clean_response) 
-                    clean_response = clean_response.strip()
+                    # --- 2. THE CLEANER (Passing through the Shield) ---
+                    clean_response = clean_ai_response(raw_response)
                     
                     # Display the clean message
                     st.markdown(clean_response)
@@ -424,7 +439,10 @@ elif app_mode == "🌿 Soul Sanctuary":
             
         if not st.session_state.soul_messages:
             init_prompt = f"The user is feeling: {st.session_state.initial_mood}. Start the conversation smoothly as {persona_key}."
-            st.session_state.soul_messages.append({"role": "assistant", "content": agent.chat_with_agent(init_prompt, persona_name=selected_counselor)})
+            # Shield applied here too
+            raw_init = agent.chat_with_agent(init_prompt, persona_name=selected_counselor)
+            clean_init = clean_ai_response(raw_init)
+            st.session_state.soul_messages.append({"role": "assistant", "content": clean_init})
 
         for msg in st.session_state.soul_messages:
             with st.chat_message(msg["role"]): st.markdown(msg["content"])
@@ -434,6 +452,9 @@ elif app_mode == "🌿 Soul Sanctuary":
             with st.chat_message("user"): st.markdown(prompt)
             with st.chat_message("assistant"):
                 with st.spinner(f"{persona_key} is typing..."):
-                    response = agent.chat_with_agent(prompt, persona_name=selected_counselor)
-                    st.markdown(response)
-                    st.session_state.soul_messages.append({"role": "assistant", "content": response})
+                    # Shield applied for continuous chat
+                    raw_response = agent.chat_with_agent(prompt, persona_name=selected_counselor)
+                    clean_response = clean_ai_response(raw_response)
+                    
+                    st.markdown(clean_response)
+                    st.session_state.soul_messages.append({"role": "assistant", "content": clean_response})
