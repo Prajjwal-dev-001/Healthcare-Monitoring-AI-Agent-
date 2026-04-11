@@ -32,3 +32,5 @@ A comprehensive, AI-powered health monitoring and assistance platform built for 
    ```bash
    git clone [https://github.com/Prajjwal-dev-001/Healthcare-Monitoring-AI-Agent-.git](https://github.com/Prajjwal-dev-001/Healthcare-Monitoring-AI-Agent-.git)
    cd Healthcare-Monitoring-AI-Agent-
+
+Check out the [Architecture Documentation](ARCHITECTURE.md) for technical details.
