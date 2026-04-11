@@ -1,8 +1,6 @@
 streamlit
 pandas
 groq
-langchain
-langchain-groq
 xhtml2pdf
 markdown
 PyMuPDF
